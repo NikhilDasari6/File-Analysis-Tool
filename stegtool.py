@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import magic
+import argparse
 
 def detect_file(file_path):
     if not os.path.exists(file_path):
@@ -14,12 +15,28 @@ def detect_file(file_path):
     print(f"Type: {mime_type}")
 
 
-if __name__ == "__main__":
-    import argparse
+def main():
+    """
+    Main function to parse command-line arguments and execute the tool.
+    """
+    parser = argparse.ArgumentParser(
+        description="A CLI tool with file detection functionality."
+    )
+    
+    parser.add_argument(
+        "-d",
+        metavar="FILE",
+        help="Detect the MIME type of the specified file."
+    )
 
-    parser = argparse.ArgumentParser(description="Detect the MIME type of a file.")
-    parser.add_argument("file", help="Path to the file to analyze.")
     args = parser.parse_args()
 
-    detect_file(args.file)
+    if args.d:
+        detect_file(args.d)
+    else:
+        print("No valid options provided. Use --help for usage information.")
+
+
+if __name__ == "__main__":
+    main()
 
