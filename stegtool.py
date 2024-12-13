@@ -1,67 +1,83 @@
 #!/usr/bin/env python3
-import os
-import magic
+
 import argparse
-import string
+import magic
 
-def detect_file(file_path):
-    if not os.path.exists(file_path):
-        print(f"Error: The file '{file_path}' does not exist.")
-        return
-
-    mime = magic.Magic(mime=True)
-    mime_type = mime.from_file(file_path)
-
-    print(f"File: {file_path}")
-    print(f"Type: {mime_type}")
-
-
-def extract_text(file_path):
-    if not os.path.exists(file_path):
-        print(f"Error: The file '{file_path}' does not exist.")
-        return
-
+def detect_file_type(file_path):
     try:
-        with open(file_path, 'rb') as f:
-            content = f.read()
-        
-        readable_text = ''.join(
-            chr(c) if chr(c) in string.printable else '' for c in content
-        )
-        
-        if readable_text.strip():
-            print(f"Extracted Text from {file_path}:\n")
-            print(readable_text)
-        else:
-            print(f"No readable text found in {file_path}.")
+        mime = magic.Magic(mime=True)
+        file_type = mime.from_file(file_path)
+        print(f"File type: {file_type}")
     except Exception as e:
-        print(f"Error: Could not read the file '{file_path}'. {e}")
+        print(f"Error detecting file type: {e}")
 
+def extract_readable_text(file_path):
+    try:
+        with open(file_path, 'rb') as file:
+            content = file.read()
+            readable_text = "".join(
+                chr(byte) if 32 <= byte < 127 or 160 <= byte <= 255 else ""
+                for byte in content
+            )
+            print("Readable Text:")
+            print(readable_text)
+    except Exception as e:
+        print(f"Error extracting readable text: {e}")
+
+def hex_dump(file_path, bytes_per_line=16):
+    try:
+        with open(file_path, 'rb') as file:
+            offset = 0
+            while chunk := file.read(bytes_per_line):
+                hex_values = " ".join(f"{byte:02x}" for byte in chunk)
+                ascii_values = "".join(
+                    chr(byte) if 32 <= byte < 127 else "." for byte in chunk
+                )
+                print(f"{offset:08x}  {hex_values:<{bytes_per_line*3}}  |{ascii_values}|")
+                offset += bytes_per_line
+    except FileNotFoundError:
+        print(f"Error: The file '{file_path}' does not exist.")
+    except PermissionError:
+        print(f"Error: Permission denied for file '{file_path}'.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="A CLI tool for file detection and text extraction.")
-    
-    parser.add_argument(
-        "-d",
-        metavar="FILE",
-        help="Detect the MIME type of the specified file."
+    parser = argparse.ArgumentParser(
+        description="CLI Tool with file detection, readable text extraction, and hex dump features."
     )
-
     parser.add_argument(
-        "-t",
+        "-d", "--detect",
         metavar="FILE",
-        help="Extract readable ASCII or Unicode text from the specified file."
+        help="Detect the file type of the specified file."
+    )
+    parser.add_argument(
+        "-t", "--text",
+        metavar="FILE",
+        help="Extract readable ASCII/Unicode text from the specified file."
+    )
+    parser.add_argument(
+        "-x", "--hex-dump",
+        metavar="FILE",
+        help="Generate a hex dump of the specified file."
+    )
+    parser.add_argument(
+        "-b", "--bytes-per-line",
+        type=int,
+        default=16,
+        help="Number of bytes to display per line in the hex dump (default: 16)."
     )
 
     args = parser.parse_args()
 
-    if args.d:
-        detect_file(args.d)
-    elif args.t:
-        extract_text(args.t)
+    if args.detect:
+        detect_file_type(args.detect)
+    elif args.text:
+        extract_readable_text(args.text)
+    elif args.hex_dump:
+        hex_dump(args.hex_dump, args.bytes_per_line)
     else:
-        print("No valid options provided. Use --help for usage information.")
-
+        parser.print_help()
 
 if __name__ == "__main__":
     main()
