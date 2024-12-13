@@ -2,6 +2,7 @@
 
 import argparse
 import magic
+import re
 
 def detect_file_type(file_path):
     try:
@@ -42,9 +43,28 @@ def hex_dump(file_path, bytes_per_line=16):
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
+def reverse_hex_dump(hex_dump_path, output_file_path):
+    try:
+        with open(hex_dump_path, 'r') as hex_file, open(output_file_path, 'wb') as output_file:
+            for line in hex_file:
+                # Extract hex values from the line
+                match = re.match(r"^[0-9a-fA-F]+(?:\s+)([0-9a-fA-F\s]+)", line)
+                if match:
+                    hex_values = match.group(1).strip().split()
+                    # Convert hex values to bytes and write to output
+                    output_file.write(bytes(int(byte, 16) for byte in hex_values))
+        print(f"Binary file successfully created: {output_file_path}")
+    except FileNotFoundError:
+        print(f"Error: The hex dump file '{hex_dump_path}' does not exist.")
+    except Exception as e:
+        print(f"Error reversing hex dump: {e}")
+
 def main():
+    """
+    Main function to handle CLI arguments and run the appropriate features.
+    """
     parser = argparse.ArgumentParser(
-        description="CLI Tool with file detection, readable text extraction, and hex dump features."
+        description="CLI Tool with file detection, readable text extraction, hex dump, and reverse hex dump features."
     )
     parser.add_argument(
         "-d", "--detect",
@@ -62,6 +82,12 @@ def main():
         help="Generate a hex dump of the specified file."
     )
     parser.add_argument(
+        "-r", "--reverse-hex",
+        nargs=2,
+        metavar=("HEX_FILE", "OUTPUT_FILE"),
+        help="Reverse a hex dump back into a binary file."
+    )
+    parser.add_argument(
         "-b", "--bytes-per-line",
         type=int,
         default=16,
@@ -76,6 +102,8 @@ def main():
         extract_readable_text(args.text)
     elif args.hex_dump:
         hex_dump(args.hex_dump, args.bytes_per_line)
+    elif args.reverse_hex:
+        reverse_hex_dump(*args.reverse_hex)
     else:
         parser.print_help()
 
