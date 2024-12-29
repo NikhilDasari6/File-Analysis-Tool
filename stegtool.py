@@ -3,13 +3,71 @@ import argparse
 import os
 from PIL import Image
 import numpy as np
-import magic
 
-def detect_file_type(file_path):
-    """Detect the type of a file using the magic library."""
+def detect_file_type_with_magic_bytes(file_path):
+    """
+    Detect the type of a file based on its magic bytes.
+    """
+    # Dictionary of magic bytes and their corresponding file types
+    magic_bytes = {
+        # Image files
+        b"\xFF\xD8\xFF": "JPEG Image",
+        b"\x89PNG\r\n\x1A\n": "PNG Image",
+        b"GIF87a": "GIF Image (87a)",
+        b"GIF89a": "GIF Image (89a)",
+        b"\x42\x4D": "BMP Image",
+        b"\x00\x00\x01\x00": "ICO Image",
+        
+        # Document files
+        b"%PDF-": "PDF Document",
+        b"\x50\x4B\x03\x04": "ZIP Archive (or Office File)",
+        b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1": "Microsoft Office (Old Format)",
+        b"PK\x03\x04": "Microsoft Office/OpenXML",
+        b"\x25\x21": "PostScript File",
+
+        # Video and audio files
+        b"RIFF....AVI ": "AVI Video",
+        b"\x1A\x45\xDF\xA3": "MKV Video",
+        b"\x00\x00\x01\xBA": "MPEG Video",
+        b"\x00\x00\x01\xB3": "MPEG Video",
+        b"\x49\x44\x33": "MP3 Audio",
+        b"OggS": "OGG Audio",
+        b"\x66\x4C\x61\x43": "FLAC Audio",
+        b"\x52\x49\x46\x46": "WAV or AVI File",
+
+        # Executable files
+        b"\x4D\x5A": "Windows Executable (EXE/DLL)",
+        b"\x7F\x45\x4C\x46": "ELF Executable",
+        b"\xCA\xFE\xBA\xBE": "Java Class File",
+        b"\x50\x4B\x03\x04": "JAR File (ZIP Archive)",
+
+        # Archive files
+        b"\x1F\x8B": "GZIP Archive",
+        b"7z\xBC\xAF\x27\x1C": "7-Zip Archive",
+        b"\x42\x5A\x68": "BZIP2 Archive",
+        b"PK\x03\x04": "ZIP Archive",
+        b"\x52\x61\x72\x21\x1A\x07\x00": "RAR Archive",
+
+        # Others
+        b"\xEF\xBB\xBF": "UTF-8 BOM",
+        b"\xFE\xFF": "UTF-16 BE BOM",
+        b"\xFF\xFE": "UTF-16 LE BOM",
+        b"\x23\x21": "Linux Shell Script",
+        b"\x3C\x3F\x78\x6D\x6C": "XML File",
+    }
+
     try:
-        file_type = magic.from_file(file_path, mime=True)
-        return file_type
+        with open(file_path, "rb") as f:
+            # Read the first 16 bytes to match with magic numbers
+            file_header = f.read(16)
+
+        # Match file_header against known magic numbers
+        for magic, file_type in magic_bytes.items():
+            if file_header.startswith(magic):
+                return file_type
+
+        # If no match is found
+        return "Unknown file type or unsupported magic bytes"
     except Exception as e:
         return f"Error detecting file type: {e}"
 
@@ -106,9 +164,54 @@ def analyze_lsb(image_path):
         print(f"Error analyzing LSB: {e}")
         return None
 
-def check_steganography(image_path):
+def extract_lsb(image_path):
     """
-    Perform a steganography check by analyzing entropy and LSB patterns.
+    Extract a binary message hidden in the least significant bits (LSBs) of an image.
+    """
+    try:
+        # Open the image
+        image = Image.open(image_path)
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+
+        # Convert the image into a NumPy array
+        pixels = np.array(image)
+        
+        # Flatten the pixel data
+        flat_pixels = pixels.flatten()
+
+        # Extract LSBs from the flattened pixel array
+        lsb_bits = ''.join(str(pixel & 1) for pixel in flat_pixels)
+
+        # Group bits into bytes and convert to characters
+        message_bytes = bytearray()
+        for i in range(0, len(lsb_bits), 8):
+            byte_chunk = lsb_bits[i:i+8]
+            if len(byte_chunk) == 8:
+                byte_value = int(byte_chunk, 2)
+                message_bytes.append(byte_value)
+
+        # Detect a null terminator (if used during encoding)
+        null_terminator = message_bytes.find(0)
+        if null_terminator != -1:
+            message_bytes = message_bytes[:null_terminator]
+
+        # Convert to a string if possible
+        try:
+            message = message_bytes.decode('utf-8')
+            print("Extracted Message:")
+            print(message)
+            return message
+        except UnicodeDecodeError:
+            print("Warning: Extracted data is not valid UTF-8. Returning raw bytes.")
+            return message_bytes
+    except Exception as e:
+        print(f"Error extracting LSB data: {e}")
+        return None
+
+def check_steganography(image_path, extract=False, output_path=None):
+    """
+    Perform a steganography check by analyzing entropy, LSB patterns, and optionally extracting hidden data.
     """
     if not os.path.exists(image_path):
         print(f"Error: File '{image_path}' does not exist.")
@@ -140,6 +243,10 @@ def check_steganography(image_path):
                     print(f"    Balanced LSB distribution detected in {channel} channel. Possible steganography.")
                 else:
                     print(f"    LSB distribution appears normal in {channel} channel.")
+
+        # LSB Data Extraction
+        if extract and output_path:
+            extract_lsb(image_path, output_path)
     except Exception as e:
         print(f"Error during steganography check: {e}")
 
@@ -151,11 +258,13 @@ def main():
     parser.add_argument("-x", "--hex", metavar="FILE", help="Generate a hex dump of a file.")
     parser.add_argument("-r", "--reverse", nargs=2, metavar=("HEX_DUMP", "OUTPUT"), help="Reconstruct binary data from a hex dump.")
     parser.add_argument("-s", "--stegcheck", metavar="IMAGE", help="Perform a steganography check on an image file.")
+    parser.add_argument("-e", "--stegextract", metavar="IMAGE", help="Extract hidden information from an image.")
+
 
     args = parser.parse_args()
 
     if args.detect:
-        result = detect_file_type(args.detect)
+        result = detect_file_type_with_magic_bytes(args.detect)
         print(f"File Type: {result}")
 
     if args.text:
@@ -173,6 +282,16 @@ def main():
 
     if args.stegcheck:
         check_steganography(args.stegcheck)
+
+    if args.stegextract:
+        result = extract_lsb(args.stegextract)
+        if isinstance(result, str):
+            print(f"Extracted Message:\n{result}")
+        elif result:
+            print("Raw Bytes Extracted:")
+            print(result)
+        else:
+            print("Failed to extract hidden message.")
 
 if __name__ == "__main__":
     main()
