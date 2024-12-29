@@ -71,24 +71,41 @@ def detect_file_type_with_magic_bytes(file_path):
     except Exception as e:
         return f"Error detecting file type: {e}"
 
-def extract_readable_text(file_path):
-    """Extract ASCII and Unicode readable text from a file."""
-    readable_text = []
+def extract_ascii_strings(file_path, min_length=4):
+    """
+    Extract readable ASCII strings from a file.
+    
+    Args:
+        file_path (str): Path to the file to analyze.
+        min_length (int): Minimum length of the ASCII strings to extract.
+        
+    Returns:
+        list: A list of readable ASCII strings.
+    """
     try:
         with open(file_path, 'rb') as f:
             content = f.read()
-            ascii_text = ''.join([chr(b) if 32 <= b < 127 else '.' for b in content])
-            readable_text.append("ASCII:\n" + ascii_text)
+        
+        # Find sequences of printable ASCII characters
+        ascii_strings = []
+        current_string = ""
 
-            try:
-                unicode_text = content.decode('utf-8')
-                readable_text.append("Unicode:\n" + unicode_text)
-            except UnicodeDecodeError:
-                readable_text.append("Unicode:\n[Could not decode as UTF-8]")
+        for byte in content:
+            char = chr(byte)
+            if 32 <= byte <= 126:  # Printable ASCII range
+                current_string += char
+            else:
+                if len(current_string) >= min_length:
+                    ascii_strings.append(current_string)
+                current_string = ""  # Reset the current string
+
+        # Add the last string if it meets the minimum length
+        if len(current_string) >= min_length:
+            ascii_strings.append(current_string)
+
+        return ascii_strings
     except Exception as e:
-        return f"Error extracting readable text: {e}"
-
-    return '\n\n'.join(readable_text)
+        return f"Error extracting ASCII strings: {e}"
 
 def generate_hex_dump(file_path):
     """Generate a hex dump of a file."""
@@ -268,7 +285,7 @@ def main():
         print(f"File Type: {result}")
 
     if args.text:
-        result = extract_readable_text(args.text)
+        result = extract_ascii_strings(args.text)
         print(f"Readable Text:\n{result}")
 
     if args.hex:
