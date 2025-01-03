@@ -262,56 +262,67 @@ def check_steganography(image_path, extract=False, output_path=None):
     except Exception as e:
         print(f"Error during steganography check: {e}")
 
-def encode_text_lsb(image_path, message, output_path, key):
-    """
-    Encode a hidden message into an image's LSB at different pixel positions determined by a key.
-
-    Args:
-        image_path (str): Path to the input image.
-        message (str): The message to hide.
-        output_path (str): Path to save the encoded image.
-        key (str): Key to generate the pixel positions.
-
-    Returns:
-        None
-    """
-    try:
-        # Load the image
-        image = Image.open(image_path)
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-
-        # Convert image to NumPy array and flatten it
-        pixels = np.array(image)
-        h, w, c = pixels.shape
-        flat_pixels = pixels.flatten()
-        total_pixels = len(flat_pixels)
-
-        # Convert the message to binary and add a delimiter
-        message_binary = ''.join(format(ord(char), '08b') for char in message)
-        message_binary += '1111111111111110'  # End delimiter
-
-        if len(message_binary) > total_pixels:
-            raise ValueError("Message is too large to fit in the image.")
-
-        # Generate pixel indices using the key
-        random.seed(key)
-        indices = list(range(total_pixels))
-        random.shuffle(indices)
-
-        # Embed the message in the image
-        for i, bit in enumerate(message_binary):
-            pixel_index = indices[i]
-            flat_pixels[pixel_index] = (flat_pixels[pixel_index] & ~1) | int(bit)
-
-        # Reshape the pixels and save the modified image
-        modified_pixels = flat_pixels.reshape((h, w, c))
-        output_image = Image.fromarray(modified_pixels.astype('uint8'))
-        output_image.save(output_path)
-
-        print(f"Message successfully encoded into {output_path}")
-    except Exception as e:
+def encode_text_lsb(image_path, message, output_path, key): 
+    """ Encode a hidden message into an image's LSB at different pixel positions determined by a key. Args: image_path (str): Path to the input image. message (str): The message to hide. output_path (str): Path to save the encoded image. key (str): Key to generate the pixel positions. Returns: None 
+    """ 
+    try: 
+        # Load the image and convert to RGB 
+        image = Image.open(image_path).convert('RGB') 
+        # Convert image to NumPy array and flatten it 
+        pixels = np.array(image).flatten() 
+        h, w, c = image.size[0], image.size[1], 3 
+        total_pixels = pixels.size 
+        # Convert the message to binary and add a delimiter 
+        message_binary = ''.join(format(ord(char), '08b') for char in message) 
+        message_binary += '1111111111111110' # End delimiter 
+        if len(message_binary) > total_pixels: 
+            raise ValueError("Message is too large to fit in the image.") 
+        # Generate pixel indices using the key 
+        random.seed(key) 
+        indices = list(range(total_pixels)) 
+        random.shuffle(indices) 
+        # Embed the message in the image 
+        for i, bit in enumerate(message_binary): 
+            pixels[indices[i]] = (pixels[indices[i]] & ~1) | int(bit) 
+        # Reshape the pixels and save the modified image 
+        modified_pixels = pixels.reshape((h, w, c)) 
+        output_image = Image.fromarray(modified_pixels.astype('uint8')) 
+        output_image.save(output_path) 
+        print(f"Message successfully encoded into {output_path}") 
+    except Exception as e: 
         print(f"Error: {e}")
+
+def decode_text_lsb(image_path, key): 
+    """ Decode a hidden message from an image's LSBs using a non-linear pattern determined by a key. Args: image_path (str): Path to the input image.
+            key (str): Key to generate the pixel positions.
+            Returns: str: The decoded hidden 
+    """ 
+    try:
+
+        image = Image.open(image_path).convert('RGB') 
+        # Convert image to NumPy array and flatten it 
+        pixels = np.array(image).flatten() 
+        total_pixels = pixels.size 
+        # Generate pixel indices using the key 
+        random.seed(key) 
+        indices = list(range(total_pixels)) 
+        random.shuffle(indices) 
+        # Extract LSBs in the order determined by the key 
+        bit_stream = ''.join((pixels[indices] & 1).astype(str)) 
+        # Group bits into bytes and convert to characters 
+        delimiter = '1111111111111110'
+        end_index = bit_stream.find(delimiter)
+
+        if end_index == -1:
+            return "Error: Invalid key or message not found"
+        
+        bit_stream = bit_stream[:end_index]
+
+        decoded_message = ''.join([chr(int(bit_stream[i:i+8], 2)) for i in range(0, len(bit_stream), 8)])
+
+        return decoded_message 
+    except Exception as e: 
+        return f"Error decoding message: {e}"
 
 def main():
     parser = argparse.ArgumentParser(description="File Analysis Tool")
@@ -323,6 +334,7 @@ def main():
     parser.add_argument("-s", "--stegcheck", metavar="IMAGE", help="Perform a steganography check on an image file.")
     parser.add_argument("-e", "--stegextract", metavar="IMAGE", help="Extract hidden information from an image.")
     parser.add_argument("--encode", nargs=2,metavar=("IMAGE","ENCODED_IMAGE"), help="Encode the hidden text in the image")
+    parser.add_argument("--decode", metavar="ENCODED_IMAGE", help="Decode the hidden text from the image")
 
 
     args = parser.parse_args()
@@ -350,9 +362,14 @@ def main():
     if args.encode:
         image_path, output_path = args.encode
         message = input("Enter the hidden message: ")
-        key = input("Enter the key for non-linear encoding: ")
-
+        key = input("Enter the key: ")
         encode_text_lsb(image_path, message, output_path, key)
+
+    if args.decode:
+        image_path = args.decode
+        key = input("Enter the key: ")
+        decoded_message = decode_text_lsb(image_path, key)
+        print(f"Decoded message: {decoded_message}") 
 
     if args.stegextract:
         result = extract_ascii_readable_lsb(args.stegextract)
