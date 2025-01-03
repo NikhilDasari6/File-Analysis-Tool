@@ -3,6 +3,7 @@ import argparse
 import os
 from PIL import Image
 import numpy as np
+import random
 
 def detect_file_type_with_magic_bytes(file_path):
     """
@@ -181,50 +182,44 @@ def analyze_lsb(image_path):
         print(f"Error analyzing LSB: {e}")
         return None
 
-def extract_lsb(image_path):
+def extract_ascii_readable_lsb(image_path, output_file=None):
     """
-    Extract a binary message hidden in the least significant bits (LSBs) of an image.
+    Extract all ASCII-readable bytes from the least significant bits (LSBs) of an image.
+
+    Args:
+        image_path (str): Path to the input image.
+        output_file (str): Path to save the extracted ASCII-readable data (optional).
+
+    Returns:
+        str: Extracted ASCII-readable message.
     """
     try:
-        # Open the image
+        # Load the image
         image = Image.open(image_path)
         if image.mode != 'RGB':
             image = image.convert('RGB')
 
-        # Convert the image into a NumPy array
+        # Convert image data to a NumPy array
         pixels = np.array(image)
         
-        # Flatten the pixel data
-        flat_pixels = pixels.flatten()
+        # Flatten the array and extract LSBs
+        lsb_array = pixels & 1
+        bit_stream = lsb_array.flatten()
 
-        # Extract LSBs from the flattened pixel array
-        lsb_bits = ''.join(str(pixel & 1) for pixel in flat_pixels)
+        # Group bits into bytes and convert to ASCII
+        byte_array = np.packbits(bit_stream)
+        ascii_readable_message = ''.join(
+            chr(b) if 32 <= b <= 126 else '.' for b in byte_array
+        )
 
-        # Group bits into bytes and convert to characters
-        message_bytes = bytearray()
-        for i in range(0, len(lsb_bits), 8):
-            byte_chunk = lsb_bits[i:i+8]
-            if len(byte_chunk) == 8:
-                byte_value = int(byte_chunk, 2)
-                message_bytes.append(byte_value)
+        # Save to output file if specified
+        if output_file:
+            with open(output_file, "w") as f:
+                f.write(ascii_readable_message)
 
-        # Detect a null terminator (if used during encoding)
-        null_terminator = message_bytes.find(0)
-        if null_terminator != -1:
-            message_bytes = message_bytes[:null_terminator]
-
-        # Convert to a string if possible
-        try:
-            message = message_bytes.decode('utf-8')
-            print("Extracted Message:")
-            print(message)
-            return message
-        except UnicodeDecodeError:
-            print("Warning: Extracted data is not valid UTF-8. Returning raw bytes.")
-            return message_bytes
+        return ascii_readable_message
     except Exception as e:
-        print(f"Error extracting LSB data: {e}")
-        return None
+        return f"Error extracting ASCII-readable information: {e}"
 
 def check_steganography(image_path, extract=False, output_path=None):
     """
@@ -267,6 +262,57 @@ def check_steganography(image_path, extract=False, output_path=None):
     except Exception as e:
         print(f"Error during steganography check: {e}")
 
+def encode_text_lsb(image_path, message, output_path, key):
+    """
+    Encode a hidden message into an image's LSB at different pixel positions determined by a key.
+
+    Args:
+        image_path (str): Path to the input image.
+        message (str): The message to hide.
+        output_path (str): Path to save the encoded image.
+        key (str): Key to generate the pixel positions.
+
+    Returns:
+        None
+    """
+    try:
+        # Load the image
+        image = Image.open(image_path)
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+
+        # Convert image to NumPy array and flatten it
+        pixels = np.array(image)
+        h, w, c = pixels.shape
+        flat_pixels = pixels.flatten()
+        total_pixels = len(flat_pixels)
+
+        # Convert the message to binary and add a delimiter
+        message_binary = ''.join(format(ord(char), '08b') for char in message)
+        message_binary += '1111111111111110'  # End delimiter
+
+        if len(message_binary) > total_pixels:
+            raise ValueError("Message is too large to fit in the image.")
+
+        # Generate pixel indices using the key
+        random.seed(key)
+        indices = list(range(total_pixels))
+        random.shuffle(indices)
+
+        # Embed the message in the image
+        for i, bit in enumerate(message_binary):
+            pixel_index = indices[i]
+            flat_pixels[pixel_index] = (flat_pixels[pixel_index] & ~1) | int(bit)
+
+        # Reshape the pixels and save the modified image
+        modified_pixels = flat_pixels.reshape((h, w, c))
+        output_image = Image.fromarray(modified_pixels.astype('uint8'))
+        output_image.save(output_path)
+
+        print(f"Message successfully encoded into {output_path}")
+    except Exception as e:
+        print(f"Error: {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="File Analysis Tool")
 
@@ -276,6 +322,7 @@ def main():
     parser.add_argument("-r", "--reverse", nargs=2, metavar=("HEX_DUMP", "OUTPUT"), help="Reconstruct binary data from a hex dump.")
     parser.add_argument("-s", "--stegcheck", metavar="IMAGE", help="Perform a steganography check on an image file.")
     parser.add_argument("-e", "--stegextract", metavar="IMAGE", help="Extract hidden information from an image.")
+    parser.add_argument("--encode", nargs=2,metavar=("IMAGE","ENCODED_IMAGE"), help="Encode the hidden text in the image")
 
 
     args = parser.parse_args()
@@ -300,15 +347,22 @@ def main():
     if args.stegcheck:
         check_steganography(args.stegcheck)
 
+    if args.encode:
+        image_path, output_path = args.encode
+        message = input("Enter the hidden message: ")
+        key = input("Enter the key for non-linear encoding: ")
+
+        encode_text_lsb(image_path, message, output_path, key)
+
     if args.stegextract:
-        result = extract_lsb(args.stegextract)
+        result = extract_ascii_readable_lsb(args.stegextract)
         if isinstance(result, str):
-            print(f"Extracted Message:\n{result}")
+            print(f"Extracted lsbs:\n{result}")
         elif result:
             print("Raw Bytes Extracted:")
             print(result)
         else:
-            print("Failed to extract hidden message.")
+            print("Failed to extract hidden lsbs")
 
 if __name__ == "__main__":
     main()
